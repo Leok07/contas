@@ -5,9 +5,11 @@ import {
   updateDoc, 
   deleteDoc, 
   doc,
+  writeBatch
 } from 'firebase/firestore';
 import { getFirebaseFirestore } from './firebase';
 import { Transaction } from './types';
+import { calculateInstallments, addMonthsToDate } from './calculations';
 
 const COLLECTION_NAME = 'transactions_v2';
 
@@ -53,6 +55,7 @@ export function subscribeTransactions(
             splitType: data.splitType || 'split_50_50',
             category: data.category || 'general',
             notes: data.notes || '',
+            installment: data.installment || undefined,
             createdAt: Number(data.createdAt) || Date.now(),
           });
         });
@@ -84,7 +87,7 @@ export function subscribeTransactions(
 }
 
 /**
- * Cria uma nova transação diretamente no Firestore
+ * Cria uma nova transação direta
  */
 export async function createTransaction(
   item: Omit<Transaction, 'id' | 'createdAt'>
@@ -101,6 +104,48 @@ export async function createTransaction(
     createdAt: Date.now(),
   });
   return docRef.id;
+}
+
+/**
+ * Cria múltiplos lançamentos parcelados de forma atômica no Firestore via writeBatch
+ */
+export async function createInstallmentTransactions(
+  baseItem: Omit<Transaction, 'id' | 'createdAt'>,
+  installmentsCount: number
+): Promise<void> {
+  const db = getFirebaseFirestore();
+
+  if (!db) {
+    throw new Error('Banco de dados em nuvem não disponível.');
+  }
+
+  const installmentAmounts = calculateInstallments(baseItem.amount, installmentsCount);
+  const groupId = 'inst-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+  const batch = writeBatch(db);
+
+  for (let i = 0; i < installmentsCount; i++) {
+    const installmentDate = addMonthsToDate(baseItem.date, i);
+    const installmentNumber = i + 1;
+    const docRef = doc(collection(db, COLLECTION_NAME));
+
+    batch.set(docRef, {
+      title: `${baseItem.title} (${installmentNumber}/${installmentsCount})`,
+      amount: installmentAmounts[i],
+      date: installmentDate,
+      paidBy: baseItem.paidBy,
+      splitType: baseItem.splitType,
+      category: baseItem.category,
+      notes: baseItem.notes ? `${baseItem.notes} - Parcela ${installmentNumber}/${installmentsCount}` : `Parcela ${installmentNumber}/${installmentsCount}`,
+      installment: {
+        current: installmentNumber,
+        total: installmentsCount,
+        groupId,
+      },
+      createdAt: Date.now() + i, // Incremento sutil para manter ordenação estável
+    });
+  }
+
+  await batch.commit();
 }
 
 /**

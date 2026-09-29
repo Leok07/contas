@@ -20,6 +20,12 @@ export interface CategoryInfo {
   code: string;
 }
 
+export interface InstallmentInfo {
+  current: number; // Ex: 1
+  total: number;   // Ex: 3
+  groupId: string; // ID compartilhado entre todas as parcelas da mesma compra
+}
+
 export interface Transaction {
   id: string;
   title: string;
@@ -29,6 +35,7 @@ export interface Transaction {
   splitType: SplitType;
   category: CategoryKey;
   notes?: string;
+  installment?: InstallmentInfo;
   createdAt: number;
 }
 

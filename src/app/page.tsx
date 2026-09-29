@@ -12,6 +12,7 @@ import {
 import { 
   subscribeTransactions, 
   createTransaction, 
+  createInstallmentTransactions,
   editTransaction, 
   removeTransaction,
   ConnectionStatus 
@@ -103,7 +104,8 @@ export default function Home() {
 
   // CRUD Handlers
   const handleSaveTransaction = async (
-    data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }
+    data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string },
+    installmentsCount: number = 1
   ) => {
     if (data.id) {
       const existing = transactions.find((t) => t.id === data.id);
@@ -119,6 +121,8 @@ export default function Home() {
           notes: data.notes,
         });
       }
+    } else if (installmentsCount > 1) {
+      await createInstallmentTransactions(data, installmentsCount);
     } else {
       await createTransaction({
         title: data.title,

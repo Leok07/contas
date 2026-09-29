@@ -122,10 +122,15 @@ export function IndustrialList({
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-bold text-zinc-200 truncate">
                         {t.title}
                       </span>
+                      {t.installment && (
+                        <span className="text-[9px] px-1 py-0.2 border border-zinc-700 bg-zinc-850 text-orange-400 font-bold tracking-wider">
+                          PARCELA {t.installment.current}/{t.installment.total}
+                        </span>
+                      )}
                     </div>
 
                     {t.notes && (

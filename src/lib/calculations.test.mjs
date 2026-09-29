@@ -113,25 +113,50 @@ function getBillingCycleForDate(dateStr) {
   };
 }
 
+function calculateInstallments(totalAmount, count) {
+  if (count <= 1) return [Math.round(totalAmount * 100) / 100];
+  const totalCents = Math.round(totalAmount * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainder = totalCents % count;
+
+  const installments = [];
+  for (let i = 0; i < count; i++) {
+    const currentCents = i < remainder ? baseCents + 1 : baseCents;
+    installments.push(currentCents / 100);
+  }
+  return installments;
+}
+
+function addMonthsToDate(dateStr, monthsToAdd) {
+  if (!dateStr || !dateStr.includes('-')) return dateStr;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, (month - 1) + monthsToAdd, day);
+  const targetMonth = ((month - 1) + monthsToAdd) % 12;
+  const normalizedTargetMonth = targetMonth < 0 ? targetMonth + 12 : targetMonth;
+  if (targetDate.getMonth() !== normalizedTargetMonth) {
+    targetDate.setDate(0);
+  }
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 test('Ciclo de Fatura: dia 09 vs dia 10', () => {
-  // Dia 09/09 ainda pertence ao ciclo que iniciou em 10/08
   const c1 = getBillingCycleForDate('2026-09-09');
   assert.equal(c1.startDate, '2026-08-10');
   assert.equal(c1.endDate, '2026-09-09');
   assert.equal(c1.key, '2026-08');
 
-  // Dia 10/09 vira automaticamente o ciclo!
   const c2 = getBillingCycleForDate('2026-09-10');
   assert.equal(c2.startDate, '2026-09-10');
   assert.equal(c2.endDate, '2026-10-09');
   assert.equal(c2.key, '2026-09');
 
-  // Dia 29/09 continua no ciclo que iniciou em 10/09
   const c3 = getBillingCycleForDate('2026-09-29');
   assert.equal(c3.startDate, '2026-09-10');
   assert.equal(c3.endDate, '2026-10-09');
 
-  // Virada de ano: 05 de Janeiro pertence ao ciclo de 10 de Dezembro
   const c4 = getBillingCycleForDate('2027-01-05');
   assert.equal(c4.startDate, '2026-12-10');
   assert.equal(c4.endDate, '2027-01-09');
@@ -140,21 +165,16 @@ test('Ciclo de Fatura: dia 09 vs dia 10', () => {
 
 test('Balanço Leeo & Marii: Férias, Abatimento no Cartão e PIX', () => {
   const transactions = [
-    // Leeo pagou casa de férias inteira: Marii deve 1500
     { id: '1', title: 'Casa Férias', amount: 1500, paidBy: 'leeo', splitType: 'full_debt' },
-    // Marii passou compra de Leeo no cartão dela: Leeo deve 400 (abate 400)
     { id: '2', title: 'Cartão Marii', amount: 400, paidBy: 'marii', splitType: 'full_debt' },
-    // Jantar 50/50 de 200 pago por Marii (Leeo deve 100, abate mais 100)
     { id: '3', title: 'Jantar', amount: 200, paidBy: 'marii', splitType: 'split_50_50' },
   ];
 
   const res = calculateBalance(transactions);
-  // Marii devia 1500 - 400 - 100 = 1000
   assert.equal(res.debtor, 'marii');
   assert.equal(res.debtAmount, 1000);
   assert.equal(res.netBalance, 1000);
 
-  // Marii quita via PIX de 1000
   transactions.push({
     id: '4',
     title: 'PIX Marii',
@@ -167,4 +187,22 @@ test('Balanço Leeo & Marii: Férias, Abatimento no Cartão e PIX', () => {
   assert.equal(resAfterPix.debtor, 'none');
   assert.equal(resAfterPix.debtAmount, 0);
   assert.equal(resAfterPix.netBalance, 0);
+});
+
+test('Cálculo e divisão exata de parcelamento e datas mensais', () => {
+  // Exemplo do usuário: 300 em 3x
+  const inst1 = calculateInstallments(300, 3);
+  assert.deepEqual(inst1, [100, 100, 100]);
+
+  // Divisão com dízima: 100 em 3x
+  const inst2 = calculateInstallments(100, 3);
+  assert.deepEqual(inst2, [33.34, 33.33, 33.33]);
+  const sum = inst2.reduce((a, b) => a + b, 0);
+  assert.equal(Math.round(sum * 100) / 100, 100);
+
+  // Progressão de datas mês a mês
+  assert.equal(addMonthsToDate('2026-09-15', 0), '2026-09-15');
+  assert.equal(addMonthsToDate('2026-09-15', 1), '2026-10-15');
+  assert.equal(addMonthsToDate('2026-09-15', 2), '2026-11-15');
+  assert.equal(addMonthsToDate('2026-12-10', 1), '2027-01-10');
 });

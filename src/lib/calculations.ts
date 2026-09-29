@@ -108,6 +108,48 @@ export function calculateBalance(transactions: Transaction[]): BalanceSummary {
 }
 
 /**
+ * Divide um valor total em N parcelas com precisão exata de centavos
+ * Ex: R$ 100 em 3x -> [33.34, 33.33, 33.33] (soma = 100.00)
+ */
+export function calculateInstallments(totalAmount: number, count: number): number[] {
+  if (count <= 1) return [Math.round(totalAmount * 100) / 100];
+  
+  const totalCents = Math.round(totalAmount * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainder = totalCents % count;
+
+  const installments: number[] = [];
+  for (let i = 0; i < count; i++) {
+    // Adiciona 1 centavo nas primeiras parcelas para cobrir o resto da divisão
+    const currentCents = i < remainder ? baseCents + 1 : baseCents;
+    installments.push(currentCents / 100);
+  }
+  return installments;
+}
+
+/**
+ * Adiciona N meses a uma data YYYY-MM-DD mantendo o dia correspondente
+ */
+export function addMonthsToDate(dateStr: string, monthsToAdd: number): string {
+  if (!dateStr || !dateStr.includes('-')) return dateStr;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  
+  const targetDate = new Date(year, (month - 1) + monthsToAdd, day);
+  
+  // Trata overflow de fim de mês (ex: 31 de janeiro + 1 mês -> 28 de fevereiro)
+  const targetMonth = ((month - 1) + monthsToAdd) % 12;
+  const normalizedTargetMonth = targetMonth < 0 ? targetMonth + 12 : targetMonth;
+  if (targetDate.getMonth() !== normalizedTargetMonth) {
+    targetDate.setDate(0); // Último dia do mês correto
+  }
+
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Formata moeda BRL com precisão e estilo tabular
  */
 export function formatCurrency(amount: number): string {

@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Transaction, Person, SplitType, CategoryKey } from '@/lib/types';
-import { CATEGORIES, formatCurrency } from '@/lib/calculations';
+import { CATEGORIES, formatCurrency, formatDateShort } from '@/lib/calculations';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
+  onSave: (
+    data: Omit<Transaction, 'id' | 'createdAt'> & { id?: string },
+    installmentsCount?: number
+  ) => Promise<void>;
   editingTransaction?: Transaction | null;
 }
 
@@ -26,6 +29,10 @@ export function QuickEntryModal({
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Parcelamento
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installmentsCount, setInstallmentsCount] = useState(3);
+
   useEffect(() => {
     setErrorMsg('');
     if (editingTransaction) {
@@ -36,6 +43,8 @@ export function QuickEntryModal({
       setSplitType(editingTransaction.splitType);
       setCategory(editingTransaction.category);
       setNotes(editingTransaction.notes || '');
+      setIsInstallment(false);
+      setInstallmentsCount(1);
     } else {
       setTitle('');
       setAmount('');
@@ -45,6 +54,8 @@ export function QuickEntryModal({
       setSplitType('split_50_50');
       setCategory('general');
       setNotes('');
+      setIsInstallment(false);
+      setInstallmentsCount(3);
     }
   }, [editingTransaction, isOpen]);
 
@@ -58,16 +69,23 @@ export function QuickEntryModal({
 
     try {
       setIsSubmitting(true);
-      await onSave({
-        id: editingTransaction?.id,
-        title: title.trim(),
-        amount: parsedAmount,
-        date,
-        paidBy,
-        splitType,
-        category,
-        notes: notes.trim(),
-      });
+      const count = (!editingTransaction && isInstallment && splitType !== 'payment_pix') 
+        ? Math.max(2, installmentsCount) 
+        : 1;
+
+      await onSave(
+        {
+          id: editingTransaction?.id,
+          title: title.trim(),
+          amount: parsedAmount,
+          date,
+          paidBy,
+          splitType,
+          category,
+          notes: notes.trim(),
+        },
+        count
+      );
       onClose();
     } catch (err: any) {
       console.error('Erro ao salvar lançamento:', err);
@@ -102,6 +120,10 @@ export function QuickEntryModal({
     return `Dividido 50/50: Leeo deve ${formatCurrency(halfAmount)} para Marii (Abate do saldo).`;
   };
 
+  const installmentPerMonth = numAmount > 0 && installmentsCount > 0 
+    ? numAmount / installmentsCount 
+    : 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto">
       <div 
@@ -129,7 +151,7 @@ export function QuickEntryModal({
           {/* Valor Principal (Display Grande) */}
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
-              Valor (R$)
+              Valor Total (R$)
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-500 text-sm font-bold">
@@ -157,7 +179,7 @@ export function QuickEntryModal({
             <input
               type="text"
               required
-              placeholder="Ex: Aluguel, Mercado, Compras no cartão..."
+              placeholder="Ex: Aluguel, Supermercado, Compra no cartão..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full px-3 py-2.5 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
@@ -245,11 +267,79 @@ export function QuickEntryModal({
             </div>
           </div>
 
+          {/* Parcelamento (apenas para novas contas que não sejam PIX) */}
+          {!editingTransaction && splitType !== 'payment_pix' && (
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
+                Condição de Pagamento
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsInstallment(false)}
+                  className={`py-2 text-center uppercase tracking-wider font-bold transition border rounded-none ${
+                    !isInstallment
+                      ? 'bg-zinc-100 text-black border-zinc-100'
+                      : 'bg-[#131317] text-zinc-400 border-zinc-800 hover:border-zinc-700'
+                  }`}
+                >
+                  À Vista (1x)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsInstallment(true)}
+                  className={`py-2 text-center uppercase tracking-wider font-bold transition border rounded-none ${
+                    isInstallment
+                      ? 'bg-zinc-100 text-black border-zinc-100'
+                      : 'bg-[#131317] text-zinc-400 border-zinc-800 hover:border-zinc-700'
+                  }`}
+                >
+                  Parcelado (Mês a Mês)
+                </button>
+              </div>
+
+              {isInstallment && (
+                <div className="mt-2 p-2.5 border border-zinc-800 bg-[#101014] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase text-zinc-400">Parcelas:</span>
+                    <div className="flex flex-wrap gap-1 justify-end">
+                      {[2, 3, 4, 5, 6, 10, 12].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setInstallmentsCount(n)}
+                          className={`px-2 py-0.5 border text-[10px] font-mono font-bold transition ${
+                            installmentsCount === n
+                              ? 'bg-orange-500 text-black border-orange-500'
+                              : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          {n}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-zinc-300 flex items-center justify-between pt-1 border-t border-zinc-850">
+                    <span>Plano:</span>
+                    <strong className="text-white font-mono">
+                      {installmentsCount}x de {formatCurrency(installmentPerMonth)}
+                    </strong>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-500 leading-tight">
+                    Será gerado 1 lançamento automático por mês a partir da data selecionada.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Data e Categoria */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
-                Data
+                {isInstallment ? 'Data da 1ª Parcela' : 'Data'}
               </label>
               <input
                 type="date"
@@ -313,7 +403,7 @@ export function QuickEntryModal({
               disabled={isSubmitting}
               className="px-5 py-2 bg-orange-500 hover:bg-orange-400 text-black font-bold uppercase tracking-wider text-[11px] transition disabled:opacity-50"
             >
-              {isSubmitting ? 'Salvando...' : 'Salvar Conta'}
+              {isSubmitting ? 'Salvando...' : isInstallment ? `Lançar ${installmentsCount}x` : 'Salvar Conta'}
             </button>
           </div>
         </form>
