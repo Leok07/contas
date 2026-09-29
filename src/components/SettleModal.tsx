@@ -19,9 +19,11 @@ export function SettleModal({
   const [payer, setPayer] = useState<Person>('marii');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    setErrorMsg('');
     if (isOpen) {
       const today = new Date().toISOString().split('T')[0];
       setDate(today);
@@ -42,6 +44,7 @@ export function SettleModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     const parsedAmount = parseFloat(amount.replace(',', '.'));
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
 
@@ -60,8 +63,9 @@ export function SettleModal({
         notes: 'Liquidação de saldo',
       });
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao registrar acerto:', err);
+      setErrorMsg(err.message || 'Falha ao registrar acerto no banco.');
     } finally {
       setIsSubmitting(false);
     }
@@ -169,6 +173,12 @@ export function SettleModal({
               className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
             />
           </div>
+
+          {errorMsg && (
+            <div className="p-2 border border-red-900 bg-red-950/50 text-red-400 text-[11px] font-mono">
+              {errorMsg}
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
             <button

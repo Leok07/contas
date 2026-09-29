@@ -1,6 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStoredFirebaseConfig } from './storageService';
 import { FirebaseConfig } from './types';
 
 let memoryConfig: FirebaseConfig | null = null;
@@ -17,24 +16,18 @@ export function getActiveFirebaseConfig(): FirebaseConfig | null {
     return memoryConfig;
   }
 
-  // 2. Tenta carregar das variáveis de ambiente com NEXT_PUBLIC_
+  // 2. Variáveis de ambiente (Vercel ou .env.local)
   const envConfig: FirebaseConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || '',
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN || '',
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || '',
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || '',
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || '',
   };
 
   if (envConfig.apiKey && envConfig.projectId) {
     return envConfig;
-  }
-
-  // 3. Se não estiver em env, verifica se o usuário configurou via modal no app
-  const storedConfig = getStoredFirebaseConfig();
-  if (storedConfig && storedConfig.apiKey && storedConfig.projectId) {
-    return storedConfig;
   }
 
   return null;

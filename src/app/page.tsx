@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, Cloud, HardDrive, Plus, Terminal } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Transaction, BillingCycle } from '@/lib/types';
 import { calculateBalance } from '@/lib/calculations';
 import { 
@@ -13,7 +13,8 @@ import {
   subscribeTransactions, 
   createTransaction, 
   editTransaction, 
-  removeTransaction 
+  removeTransaction,
+  ConnectionStatus 
 } from '@/lib/firestoreService';
 import { isFirebaseConfigured, setMemoryFirebaseConfig } from '@/lib/firebase';
 import { IndustrialBalance } from '@/components/IndustrialBalance';
@@ -21,11 +22,10 @@ import { CycleNavigator } from '@/components/CycleNavigator';
 import { IndustrialList } from '@/components/IndustrialList';
 import { QuickEntryModal } from '@/components/QuickEntryModal';
 import { SettleModal } from '@/components/SettleModal';
-import { FirebaseModal } from '@/components/FirebaseModal';
 
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isFirebaseActive, setIsFirebaseActive] = useState(false);
+  const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
   
   // Ciclo selecionado (padrão é o ciclo ativo do dia 10)
   const [selectedCycleKey, setSelectedCycleKey] = useState<string>('');
@@ -34,13 +34,12 @@ export default function Home() {
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   useEffect(() => {
     let unsubscribe = () => {};
 
     const init = async () => {
-      // Se não encontrou no bundle do cliente, tenta buscar da API (variáveis sem NEXT_PUBLIC_)
+      // 1. Se ainda não possui chaves no bundle estático, busca da API
       if (!isFirebaseConfigured()) {
         try {
           const res = await fetch('/api/config');
@@ -55,15 +54,23 @@ export default function Home() {
         }
       }
 
-      setIsFirebaseActive(isFirebaseConfigured());
-
-      // Define o ciclo ativo inicial
+      // 2. Define o ciclo ativo inicial
       const current = getCurrentBillingCycle();
       setSelectedCycleKey(current.key);
 
-      unsubscribe = subscribeTransactions((data) => {
-        setTransactions(data);
-      });
+      // 3. Conecta o listener em tempo real do Firestore
+      unsubscribe = subscribeTransactions(
+        (data) => {
+          setTransactions(data);
+        },
+        (status) => {
+          setConnStatus(status);
+        },
+        (err) => {
+          console.error('Falha de sincronização:', err);
+          setConnStatus('error');
+        }
+      );
     };
 
     init();
@@ -142,7 +149,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#08080a] text-zinc-100 pb-24 font-mono">
-      {/* Header Superior Técnico */}
+      {/* Header Superior Técnico e Limpo */}
       <header className="sticky top-0 z-40 bg-[#08080a]/90 backdrop-blur-sm border-b border-zinc-800/80 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -157,34 +164,31 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Status da Conexão */}
-            <button
-              onClick={() => setIsConfigOpen(true)}
-              type="button"
-              className="flex items-center gap-1.5 px-2 py-1 border border-zinc-800 bg-[#0c0c0e] hover:border-zinc-700 text-[10px] uppercase text-zinc-400 hover:text-zinc-200 transition"
-              title="Configurar Firebase"
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${isFirebaseActive ? 'bg-emerald-500' : 'bg-orange-500'}`} />
-              <span className="hidden sm:inline">
-                {isFirebaseActive ? 'Firebase Nuvem' : 'Local'}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setIsConfigOpen(true)}
-              type="button"
-              className="p-1 border border-zinc-800 bg-[#0c0c0e] hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition"
-              title="Configurações"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
+          {/* Status Somente-Leitura da Conexão em Nuvem */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 border border-zinc-800 bg-[#0c0c0e] text-[10px] uppercase text-zinc-300 font-mono select-none">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              connStatus === 'connected' ? 'bg-emerald-500' :
+              connStatus === 'connecting' ? 'bg-orange-500 animate-pulse' :
+              'bg-red-500'
+            }`} />
+            <span>
+              {connStatus === 'connected' ? 'Nuvem Conectada' :
+               connStatus === 'connecting' ? 'Conectando...' :
+               'Desconectado'}
+            </span>
           </div>
         </div>
       </header>
 
       {/* Conteúdo Central */}
       <div className="max-w-2xl mx-auto px-4 pt-5 space-y-6">
+        {/* Banner de erro de conexão se houver */}
+        {connStatus === 'error' && (
+          <div className="p-3 border border-red-900 bg-red-950/40 text-red-400 text-xs font-mono">
+            Falha de conexão com o banco em nuvem. Verifique se as variáveis de ambiente foram configuradas na Vercel.
+          </div>
+        )}
+
         {/* Bloco Hero de Balanço */}
         <IndustrialBalance
           summary={displayedSummary}
@@ -234,7 +238,7 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Modais */}
+      {/* Modais de Lançamento e Liquidação */}
       <QuickEntryModal
         isOpen={isEntryOpen}
         onClose={() => {
@@ -250,15 +254,6 @@ export default function Home() {
         onClose={() => setIsSettleOpen(false)}
         summary={displayedSummary}
         onConfirmSettlement={handleSettleConfirm}
-      />
-
-      <FirebaseModal
-        isOpen={isConfigOpen}
-        onClose={() => setIsConfigOpen(false)}
-        onConfigSaved={() => {
-          setIsFirebaseActive(isFirebaseConfigured());
-          window.location.reload();
-        }}
       />
     </main>
   );

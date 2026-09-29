@@ -23,9 +23,11 @@ export function QuickEntryModal({
   const [splitType, setSplitType] = useState<SplitType>('split_50_50');
   const [category, setCategory] = useState<CategoryKey>('general');
   const [notes, setNotes] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    setErrorMsg('');
     if (editingTransaction) {
       setTitle(editingTransaction.title);
       setAmount(editingTransaction.amount.toString());
@@ -50,6 +52,7 @@ export function QuickEntryModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     const parsedAmount = parseFloat(amount.replace(',', '.'));
     if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0 || !date) return;
 
@@ -66,8 +69,9 @@ export function QuickEntryModal({
         notes: notes.trim(),
       });
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar lançamento:', err);
+      setErrorMsg(err.message || 'Falha ao salvar no banco de dados.');
     } finally {
       setIsSubmitting(false);
     }
@@ -287,6 +291,12 @@ export function QuickEntryModal({
               className="w-full px-2.5 py-1.5 bg-[#131317] border border-zinc-750 text-zinc-300 text-xs focus:border-orange-500 focus:outline-none rounded-none"
             />
           </div>
+
+          {errorMsg && (
+            <div className="p-2 border border-red-900 bg-red-950/50 text-red-400 text-[11px] font-mono">
+              {errorMsg}
+            </div>
+          )}
 
           {/* Ações */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">

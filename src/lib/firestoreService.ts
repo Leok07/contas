@@ -4,56 +4,43 @@ import {
   addDoc, 
   updateDoc, 
   deleteDoc, 
-  doc, 
-  query, 
-  orderBy,
+  doc,
 } from 'firebase/firestore';
 import { getFirebaseFirestore } from './firebase';
 import { Transaction } from './types';
-import { 
-  getLocalTransactions, 
-  saveLocalTransaction, 
-  updateLocalTransaction, 
-  deleteLocalTransaction 
-} from './storageService';
 
 const COLLECTION_NAME = 'transactions_v2';
 
+export type ConnectionStatus = 'connecting' | 'connected' | 'error';
+
 /**
- * Listener em tempo real para sincronização com o Firestore
+ * Listener em tempo real para sincronização com o Firestore.
+ * Não utiliza ordenação composta para evitar o erro "The query requires an index".
+ * A ordenação é feita em memória no JavaScript.
  */
 export function subscribeTransactions(
   onUpdate: (transactions: Transaction[]) => void,
+  onStatusChange?: (status: ConnectionStatus) => void,
   onError?: (err: Error) => void
 ): () => void {
   const db = getFirebaseFirestore();
 
   if (!db) {
-    const local = getLocalTransactions();
-    onUpdate(local);
-    const storageHandler = () => {
-      onUpdate(getLocalTransactions());
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', storageHandler);
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('storage', storageHandler);
-      }
-    };
+    if (onStatusChange) onStatusChange('error');
+    if (onError) onError(new Error('Firebase Firestore não está inicializado'));
+    return () => {};
   }
 
+  if (onStatusChange) onStatusChange('connecting');
+
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      orderBy('date', 'desc'),
-      orderBy('createdAt', 'desc')
-    );
+    const colRef = collection(db, COLLECTION_NAME);
 
     const unsubscribe = onSnapshot(
-      q,
+      colRef,
       (snapshot) => {
+        if (onStatusChange) onStatusChange('connected');
+        
         const items: Transaction[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
@@ -69,31 +56,43 @@ export function subscribeTransactions(
             createdAt: Number(data.createdAt) || Date.now(),
           });
         });
+
+        // Ordenação em memória: Data decrescente, e em caso de empate, createdAt decrescente
+        items.sort((a, b) => {
+          if (b.date !== a.date) {
+            return b.date.localeCompare(a.date);
+          }
+          return b.createdAt - a.createdAt;
+        });
+
         onUpdate(items);
       },
       (error) => {
-        console.error('Erro na sincronização em tempo real do Firestore:', error);
+        console.error('Erro no listener em tempo real do Firestore:', error);
+        if (onStatusChange) onStatusChange('error');
         if (onError) onError(error);
-        onUpdate(getLocalTransactions());
       }
     );
 
     return unsubscribe;
-  } catch (err) {
-    console.error('Falha ao registrar listener do Firestore:', err);
-    onUpdate(getLocalTransactions());
+  } catch (err: any) {
+    console.error('Falha ao registrar snapshot do Firestore:', err);
+    if (onStatusChange) onStatusChange('error');
+    if (onError) onError(err);
     return () => {};
   }
 }
 
+/**
+ * Cria uma nova transação diretamente no Firestore
+ */
 export async function createTransaction(
   item: Omit<Transaction, 'id' | 'createdAt'>
 ): Promise<string> {
   const db = getFirebaseFirestore();
 
   if (!db) {
-    const saved = saveLocalTransaction(item);
-    return saved.id;
+    throw new Error('Banco de dados em nuvem não disponível.');
   }
 
   const docRef = await addDoc(collection(db, COLLECTION_NAME), {
@@ -104,12 +103,14 @@ export async function createTransaction(
   return docRef.id;
 }
 
+/**
+ * Atualiza uma transação existente
+ */
 export async function editTransaction(item: Transaction): Promise<void> {
   const db = getFirebaseFirestore();
 
   if (!db) {
-    updateLocalTransaction(item);
-    return;
+    throw new Error('Banco de dados em nuvem não disponível.');
   }
 
   const docRef = doc(db, COLLECTION_NAME, item.id);
@@ -124,12 +125,14 @@ export async function editTransaction(item: Transaction): Promise<void> {
   });
 }
 
+/**
+ * Remove uma transação
+ */
 export async function removeTransaction(id: string): Promise<void> {
   const db = getFirebaseFirestore();
 
   if (!db) {
-    deleteLocalTransaction(id);
-    return;
+    throw new Error('Banco de dados em nuvem não disponível.');
   }
 
   const docRef = doc(db, COLLECTION_NAME, id);
