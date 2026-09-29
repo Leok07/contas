@@ -3,8 +3,21 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStoredFirebaseConfig } from './storageService';
 import { FirebaseConfig } from './types';
 
+let memoryConfig: FirebaseConfig | null = null;
+
+export function setMemoryFirebaseConfig(config: FirebaseConfig) {
+  if (config.apiKey && config.projectId) {
+    memoryConfig = config;
+  }
+}
+
 export function getActiveFirebaseConfig(): FirebaseConfig | null {
-  // 1. Tenta carregar das variáveis de ambiente (Vercel ou .env.local)
+  // 1. Configuração carregada dinamicamente via /api/config
+  if (memoryConfig && memoryConfig.apiKey && memoryConfig.projectId) {
+    return memoryConfig;
+  }
+
+  // 2. Tenta carregar das variáveis de ambiente com NEXT_PUBLIC_
   const envConfig: FirebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
@@ -18,7 +31,7 @@ export function getActiveFirebaseConfig(): FirebaseConfig | null {
     return envConfig;
   }
 
-  // 2. Se não estiver em env, verifica se o usuário configurou via modal no app
+  // 3. Se não estiver em env, verifica se o usuário configurou via modal no app
   const storedConfig = getStoredFirebaseConfig();
   if (storedConfig && storedConfig.apiKey && storedConfig.projectId) {
     return storedConfig;

@@ -15,7 +15,7 @@ import {
   editTransaction, 
   removeTransaction 
 } from '@/lib/firestoreService';
-import { isFirebaseConfigured } from '@/lib/firebase';
+import { isFirebaseConfigured, setMemoryFirebaseConfig } from '@/lib/firebase';
 import { IndustrialBalance } from '@/components/IndustrialBalance';
 import { CycleNavigator } from '@/components/CycleNavigator';
 import { IndustrialList } from '@/components/IndustrialList';
@@ -37,15 +37,36 @@ export default function Home() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   useEffect(() => {
-    setIsFirebaseActive(isFirebaseConfigured());
+    let unsubscribe = () => {};
 
-    // Define o ciclo ativo inicial
-    const current = getCurrentBillingCycle();
-    setSelectedCycleKey(current.key);
+    const init = async () => {
+      // Se não encontrou no bundle do cliente, tenta buscar da API (variáveis sem NEXT_PUBLIC_)
+      if (!isFirebaseConfigured()) {
+        try {
+          const res = await fetch('/api/config');
+          if (res.ok) {
+            const cfg = await res.json();
+            if (cfg.apiKey && cfg.projectId) {
+              setMemoryFirebaseConfig(cfg);
+            }
+          }
+        } catch (e) {
+          console.warn('Configuração de fallback da API não disponível', e);
+        }
+      }
 
-    const unsubscribe = subscribeTransactions((data) => {
-      setTransactions(data);
-    });
+      setIsFirebaseActive(isFirebaseConfigured());
+
+      // Define o ciclo ativo inicial
+      const current = getCurrentBillingCycle();
+      setSelectedCycleKey(current.key);
+
+      unsubscribe = subscribeTransactions((data) => {
+        setTransactions(data);
+      });
+    };
+
+    init();
 
     return () => {
       unsubscribe();
