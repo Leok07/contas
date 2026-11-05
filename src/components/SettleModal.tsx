@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import { BalanceSummary, Transaction, Person } from '@/lib/types';
-import { formatCurrency } from '@/lib/calculations';
+import { formatCurrency, formatLocalDateForInput } from '@/lib/calculations';
 
 interface SettleModalProps {
   isOpen: boolean;
@@ -25,8 +25,7 @@ export function SettleModal({
   useEffect(() => {
     setErrorMsg('');
     if (isOpen) {
-      const today = new Date().toISOString().split('T')[0];
-      setDate(today);
+      setDate(formatLocalDateForInput());
       if (summary.debtor === 'marii') {
         setPayer('marii');
         setAmount(summary.debtAmount.toString());

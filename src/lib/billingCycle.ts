@@ -1,4 +1,4 @@
-import { BillingCycle, Transaction } from './types';
+import type { BillingCycle, Transaction } from './types';
 
 const MONTH_NAMES_SHORT = [
   'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
@@ -109,8 +109,8 @@ export function getAvailableBillingCycles(transactions: Transaction[]): BillingC
     }
   });
 
-  // Ordena do mais recente para o mais antigo
-  return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
+  // Ordena do mais antigo para o mais recente, da esquerda para a direita.
+  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 /**

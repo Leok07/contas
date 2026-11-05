@@ -19,9 +19,9 @@ Aplicativo web progressivo (PWA) de controle financeiro mútuo, otimizado para c
 - **Design Refinado (Sem Emojis)**:
   - Estética moderna de fintech (dark mode, cartões e badges elegantes, tipografia limpa).
   - Utiliza ícones vetoriais modernos (`lucide-react`) em todas as categorias e ações.
-- **Modo Resiliente / Offline**:
-  - Funciona imediatamente em modo local mesmo antes de configurar o Firebase.
-  - Permite configurar as credenciais do Firebase tanto pelas variáveis de ambiente quanto diretamente pelo menu do aplicativo!
+- **Sincronização via Firebase**:
+  - Os lançamentos são carregados e gravados no Firestore. O aplicativo não oferece modo local/offline para criação de lançamentos.
+  - As credenciais são configuradas por variáveis de ambiente ou por `/api/config` no servidor.
 
 ---
 
@@ -48,7 +48,7 @@ npm run test
 1. Acesse o [Firebase Console](https://console.firebase.google.com/) e clique em **Criar projeto** (ex: `contas-mari`).
 2. No menu lateral, clique em **Criação** -> **Cloud Firestore** e depois em **Criar banco de dados**.
    - Escolha o local (ex: `southamerica-east1` ou `us-central1`).
-   - Selecione **Iniciar no modo de teste** (permite leitura e escrita imediata).
+   - Configure as regras de acesso antes de usar dados reais.
 3. Na página inicial do projeto no Firebase, clique no ícone da engrenagem (Configurações do Projeto) ou no ícone da Web `</>` para registrar um Web App.
 4. Copie as configurações do objeto `firebaseConfig`:
    - `apiKey`
@@ -57,20 +57,10 @@ npm run test
    - `storageBucket`
    - `messagingSenderId`
    - `appId`
-5. Você pode colar essas configurações diretamente no botão **Conexão em Nuvem / Engrenagem** dentro do app ou preencher no arquivo `.env.local`.
+5. Preencha essas configurações no arquivo `.env.local`.
 
-### Regras do Firestore (Segurança Simples)
-No Firebase Console, em **Firestore Database** -> aba **Regras**, certifique-se de que a regra permite leitura e escrita:
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
+### Segurança do Firestore
+O aplicativo ainda não implementa autenticação. Não use regras que liberem leitura e escrita para qualquer pessoa com dados financeiros reais. Antes de restringir as regras, implemente e configure um método de autenticação para os usuários do app; caso contrário, as operações no Firestore serão negadas.
 
 ---
 

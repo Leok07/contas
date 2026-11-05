@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Transaction, Person, SplitType, CategoryKey } from '@/lib/types';
-import { CATEGORIES, formatCurrency, formatDateShort } from '@/lib/calculations';
+import { CATEGORIES, formatCurrency, formatDateShort, formatLocalDateForInput } from '@/lib/calculations';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
@@ -48,8 +48,7 @@ export function QuickEntryModal({
     } else {
       setTitle('');
       setAmount('');
-      const today = new Date().toISOString().split('T')[0];
-      setDate(today);
+      setDate(formatLocalDateForInput());
       setPaidBy('leeo');
       setSplitType('split_50_50');
       setCategory('general');

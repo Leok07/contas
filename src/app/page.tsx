@@ -189,7 +189,7 @@ export default function Home() {
         {/* Banner de erro de conexão se houver */}
         {connStatus === 'error' && (
           <div className="p-3 border border-red-900 bg-red-950/40 text-red-400 text-xs font-mono">
-            Falha de conexão com o banco em nuvem. Verifique se as variáveis de ambiente foram configuradas na Vercel.
+            Não foi possível conectar ao banco em nuvem. Verifique a conexão, as configurações do Firebase e as permissões de acesso.
           </div>
         )}
 

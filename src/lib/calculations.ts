@@ -1,4 +1,4 @@
-import { Transaction, BalanceSummary, CategoryInfo, CategoryKey } from './types';
+import type { Transaction, BalanceSummary, CategoryInfo, CategoryKey } from './types';
 
 export const CATEGORIES: Record<CategoryKey, CategoryInfo> = {
   general: {
@@ -175,4 +175,12 @@ export function formatDateFull(dateStr: string): string {
   if (!dateStr || !dateStr.includes('-')) return '';
   const parts = dateStr.split('-');
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+/** Formata uma data para input[type=date] no fuso local, sem conversão UTC. */
+export function formatLocalDateForInput(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
