@@ -5,35 +5,51 @@ const MONTH_NAMES_SHORT = [
   'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'
 ];
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function pad(num: number, size = 2): string {
-  let s = num.toString();
-  while (s.length < size) s = '0' + s;
-  return s;
+  return String(num).padStart(size, '0');
+}
+
+function formatDateKey(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function parseIsoDate(dateStr: string): Date | null {
+  if (!dateStr || !ISO_DATE_RE.test(dateStr)) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const parsed = new Date(y, m - 1, d);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== y ||
+    parsed.getMonth() !== m - 1 ||
+    parsed.getDate() !== d
+  ) {
+    return null;
+  }
+  return parsed;
 }
 
 /**
- * Retorna o ciclo de faturamento (10 a 09) para qualquer data YYYY-MM-DD
+ * Retorna o ciclo de faturamento (10 a 09) para qualquer data YYYY-MM-DD.
+ * Aceita referenceDate opcional para cálculos e testes determinísticos.
  */
-export function getBillingCycleForDate(dateStr: string): BillingCycle {
-  let dateObj: Date;
-  if (!dateStr || !dateStr.includes('-')) {
-    dateObj = new Date();
-  } else {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    dateObj = new Date(y, m - 1, d);
-  }
+export function getBillingCycleForDate(
+  dateStr: string,
+  referenceDate: Date = new Date()
+): BillingCycle {
+  const dateObj = parseIsoDate(dateStr) ?? referenceDate;
 
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth(); // 0 a 11
   const day = dateObj.getDate();
 
   let startYear = year;
-  let startMonth = month; // 0 a 11
+  let startMonth = month;
   let endYear = year;
-  let endMonth = month + 1; // 1 a 12
+  let endMonth = month + 1;
 
   if (day >= 10) {
-    // Início no dia 10 deste mês
     startYear = year;
     startMonth = month;
     if (month === 11) {
@@ -44,7 +60,6 @@ export function getBillingCycleForDate(dateStr: string): BillingCycle {
       endMonth = month + 1;
     }
   } else {
-    // Início no dia 10 do mês anterior
     endYear = year;
     endMonth = month;
     if (month === 0) {
@@ -63,9 +78,7 @@ export function getBillingCycleForDate(dateStr: string): BillingCycle {
   const startName = MONTH_NAMES_SHORT[startMonth];
   const endName = MONTH_NAMES_SHORT[endMonth];
 
-  // Verifica se a data atual do sistema está contida neste ciclo
-  const now = new Date();
-  const nowStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const nowStr = formatDateKey(referenceDate);
   const isCurrent = nowStr >= startDate && nowStr <= endDate;
 
   return {
@@ -79,30 +92,29 @@ export function getBillingCycleForDate(dateStr: string): BillingCycle {
 }
 
 /**
- * Retorna o ciclo ativo no exato momento da consulta
+ * Retorna o ciclo ativo na data de referência informada (padrão: hoje).
  */
-export function getCurrentBillingCycle(): BillingCycle {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = pad(now.getMonth() + 1);
-  const d = pad(now.getDate());
-  return getBillingCycleForDate(`${y}-${m}-${d}`);
+export function getCurrentBillingCycle(referenceDate: Date = new Date()): BillingCycle {
+  return getBillingCycleForDate(formatDateKey(referenceDate), referenceDate);
 }
 
 /**
- * Retorna todos os ciclos disponíveis a partir do histórico de transações + ciclo atual
+ * Retorna todos os ciclos disponíveis a partir do histórico de transações + ciclo atual.
  */
-export function getAvailableBillingCycles(transactions: Transaction[]): BillingCycle[] {
+export function getAvailableBillingCycles(
+  transactions: Pick<Transaction, 'date'>[],
+  referenceDate: Date = new Date()
+): BillingCycle[] {
   const map = new Map<string, BillingCycle>();
 
   // Sempre inclui o ciclo atual
-  const current = getCurrentBillingCycle();
+  const current = getCurrentBillingCycle(referenceDate);
   map.set(current.key, current);
 
-  // Inclui os ciclos de cada lançamento
+  // Inclui os ciclos de cada lançamento válido
   transactions.forEach((t) => {
-    if (t.date) {
-      const cycle = getBillingCycleForDate(t.date);
+    if (t.date && parseIsoDate(t.date)) {
+      const cycle = getBillingCycleForDate(t.date, referenceDate);
       if (!map.has(cycle.key)) {
         map.set(cycle.key, cycle);
       }
@@ -114,16 +126,18 @@ export function getAvailableBillingCycles(transactions: Transaction[]): BillingC
 }
 
 /**
- * Filtra transações que pertençam ao ciclo especificado (ou todas se for 'all')
+ * Filtra transações que pertençam ao ciclo especificado (ou todas se for 'all').
  */
 export function filterTransactionsByCycle(
   transactions: Transaction[],
-  cycleKey: string
+  cycleKey: string,
+  referenceDate: Date = new Date()
 ): Transaction[] {
   if (!cycleKey || cycleKey === 'all') return transactions;
 
   return transactions.filter((t) => {
-    const cycle = getBillingCycleForDate(t.date);
+    if (!t.date || !parseIsoDate(t.date)) return false;
+    const cycle = getBillingCycleForDate(t.date, referenceDate);
     return cycle.key === cycleKey;
   });
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const config = {
     apiKey: process.env.FIREBASE_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
@@ -10,5 +12,9 @@ export async function GET() {
     appId: process.env.FIREBASE_APP_ID || process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
   };
 
-  return NextResponse.json(config);
+  return NextResponse.json(config, {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
 }

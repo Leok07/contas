@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus } from 'lucide-react';
-import { Transaction, BillingCycle } from '@/lib/types';
+import type { Transaction } from '@/lib/types';
 import { calculateBalance } from '@/lib/calculations';
 import { 
   getCurrentBillingCycle, 
@@ -27,49 +27,88 @@ import { SettleModal } from '@/components/SettleModal';
 export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
-  
-  // Ciclo selecionado (padrão é o ciclo ativo do dia 10)
-  const [selectedCycleKey, setSelectedCycleKey] = useState<string>('');
+  const [referenceDate, setReferenceDate] = useState<Date>(() => new Date());
+
+  // Ciclo selecionado inicia imediatamente no ciclo ativo do dia 10
+  const [selectedCycleKey, setSelectedCycleKey] = useState<string>(
+    () => getCurrentBillingCycle().key
+  );
 
   // Modais
   const [isEntryOpen, setIsEntryOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isSettleOpen, setIsSettleOpen] = useState(false);
 
+  // Atualiza automaticamente o ciclo caso o app fique aberto na virada do dia 10
   useEffect(() => {
+    const syncDate = () => {
+      const now = new Date();
+      const prevCycleKey = getCurrentBillingCycle(referenceDate).key;
+      const nextCycleKey = getCurrentBillingCycle(now).key;
+
+      if (
+        now.getFullYear() !== referenceDate.getFullYear() ||
+        now.getMonth() !== referenceDate.getMonth() ||
+        now.getDate() !== referenceDate.getDate()
+      ) {
+        setReferenceDate(now);
+        if (nextCycleKey !== prevCycleKey) {
+          setSelectedCycleKey((currentSelected) =>
+            currentSelected === prevCycleKey ? nextCycleKey : currentSelected
+          );
+        }
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncDate();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [referenceDate]);
+
+  useEffect(() => {
+    let isCancelled = false;
     let unsubscribe = () => {};
+    const controller = new AbortController();
 
     const init = async () => {
       // 1. Se ainda não possui chaves no bundle estático, busca da API
       if (!isFirebaseConfigured()) {
         try {
-          const res = await fetch('/api/config');
+          const res = await fetch('/api/config', { signal: controller.signal });
           if (res.ok) {
             const cfg = await res.json();
-            if (cfg.apiKey && cfg.projectId) {
+            if (!isCancelled && cfg.apiKey && cfg.projectId) {
               setMemoryFirebaseConfig(cfg);
             }
           }
-        } catch (e) {
+        } catch (e: unknown) {
+          if (e instanceof Error && e.name === 'AbortError') return;
           console.warn('Configuração de fallback da API não disponível', e);
         }
       }
 
-      // 2. Define o ciclo ativo inicial
-      const current = getCurrentBillingCycle();
-      setSelectedCycleKey(current.key);
+      if (isCancelled) return;
 
-      // 3. Conecta o listener em tempo real do Firestore
+      // 2. Conecta o listener em tempo real do Firestore
       unsubscribe = subscribeTransactions(
         (data) => {
-          setTransactions(data);
+          if (!isCancelled) setTransactions(data);
         },
         (status) => {
-          setConnStatus(status);
+          if (!isCancelled) setConnStatus(status);
         },
         (err) => {
-          console.error('Falha de sincronização:', err);
-          setConnStatus('error');
+          if (!isCancelled) {
+            console.error('Falha de sincronização:', err);
+            setConnStatus('error');
+          }
         }
       );
     };
@@ -77,25 +116,30 @@ export default function Home() {
     init();
 
     return () => {
+      isCancelled = true;
+      controller.abort();
       unsubscribe();
     };
   }, []);
 
   // Lista de ciclos disponíveis gerada dinamicamente
   const availableCycles = useMemo(() => {
-    return getAvailableBillingCycles(transactions);
-  }, [transactions]);
+    return getAvailableBillingCycles(transactions, referenceDate);
+  }, [transactions, referenceDate]);
 
   // Ciclo atualmente selecionado
   const activeCycleObj = useMemo(() => {
     if (selectedCycleKey === 'all') return null;
-    return availableCycles.find((c) => c.key === selectedCycleKey) || getCurrentBillingCycle();
-  }, [selectedCycleKey, availableCycles]);
+    return (
+      availableCycles.find((c) => c.key === selectedCycleKey) ||
+      getCurrentBillingCycle(referenceDate)
+    );
+  }, [selectedCycleKey, availableCycles, referenceDate]);
 
   // Transações filtradas pelo ciclo
   const displayedTransactions = useMemo(() => {
-    return filterTransactionsByCycle(transactions, selectedCycleKey);
-  }, [transactions, selectedCycleKey]);
+    return filterTransactionsByCycle(transactions, selectedCycleKey, referenceDate);
+  }, [transactions, selectedCycleKey, referenceDate]);
 
   // Resumo de saldos do período exibido (ou geral)
   const displayedSummary = useMemo(() => {
@@ -161,7 +205,7 @@ export default function Home() {
             <div>
               <h1 className="text-xs font-bold uppercase tracking-widest text-white flex items-center gap-2">
                 <span>Leeo & Marii</span>
-                <span className="text-[10px] text-zinc-400 font-normal border border-zinc-800 px-1.5 py-0.2">
+                <span className="text-[10px] text-zinc-400 font-normal border border-zinc-800 px-1.5 py-0.5">
                   Contas
                 </span>
               </h1>
@@ -235,6 +279,7 @@ export default function Home() {
             setIsEntryOpen(true);
           }}
           type="button"
+          aria-label="Lançar Conta"
           className="w-12 h-12 bg-orange-500 text-black flex items-center justify-center font-bold shadow-lg shadow-black/80 hover:bg-orange-400 active:scale-95 transition rounded-none"
           title="Lançar Conta"
         >

@@ -8,12 +8,46 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { getFirebaseFirestore } from './firebase';
-import { Transaction } from './types';
-import { calculateInstallments, addMonthsToDate } from './calculations';
+import type { Transaction } from './types';
+import {
+  calculateInstallments,
+  addMonthsToDate,
+  isValidIsoDate,
+  roundCurrency,
+} from './calculations';
 
 const COLLECTION_NAME = 'transactions_v2';
+const MAX_INSTALLMENTS = 120;
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'error';
+
+function validateTransactionInput(item: Omit<Transaction, 'id' | 'createdAt'>): {
+  title: string;
+  amount: number;
+  date: string;
+  notes: string;
+} {
+  const title = item.title.trim();
+  if (!title) {
+    throw new Error('Informe uma descrição válida para o lançamento.');
+  }
+
+  const amount = roundCurrency(Number(item.amount));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Informe um valor maior que zero.');
+  }
+
+  if (!isValidIsoDate(item.date)) {
+    throw new Error('Informe uma data válida no formato AAAA-MM-DD.');
+  }
+
+  return {
+    title,
+    amount,
+    date: item.date,
+    notes: (item.notes || '').trim(),
+  };
+}
 
 /**
  * Listener em tempo real para sincronização com o Firestore.
@@ -48,15 +82,20 @@ export function subscribeTransactions(
           const data = docSnap.data();
           items.push({
             id: docSnap.id,
-            title: data.title || '',
-            amount: Number(data.amount) || 0,
-            date: data.date || '',
+            title: typeof data.title === 'string' ? data.title : '',
+            amount: Number.isFinite(Number(data.amount)) ? Number(data.amount) : 0,
+            date: typeof data.date === 'string' ? data.date : '',
             paidBy: data.paidBy === 'marii' ? 'marii' : 'leeo',
-            splitType: data.splitType || 'split_50_50',
+            splitType:
+              data.splitType === 'full_debt' ||
+              data.splitType === 'split_50_50' ||
+              data.splitType === 'payment_pix'
+                ? data.splitType
+                : 'split_50_50',
             category: data.category || 'general',
-            notes: data.notes || '',
+            notes: typeof data.notes === 'string' ? data.notes : '',
             installment: data.installment || undefined,
-            createdAt: Number(data.createdAt) || Date.now(),
+            createdAt: Number.isFinite(Number(data.createdAt)) ? Number(data.createdAt) : 0,
           });
         });
 
@@ -78,10 +117,11 @@ export function subscribeTransactions(
     );
 
     return unsubscribe;
-  } catch (err: any) {
-    console.error('Falha ao registrar snapshot do Firestore:', err);
+  } catch (err: unknown) {
+    const normalizedErr = err instanceof Error ? err : new Error('Falha ao conectar ao Firestore.');
+    console.error('Falha ao registrar snapshot do Firestore:', normalizedErr);
     if (onStatusChange) onStatusChange('error');
-    if (onError) onError(err);
+    if (onError) onError(normalizedErr);
     return () => {};
   }
 }
@@ -98,9 +138,16 @@ export async function createTransaction(
     throw new Error('Banco de dados em nuvem não disponível.');
   }
 
+  const validated = validateTransactionInput(item);
+
   const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-    ...item,
-    amount: Number(item.amount),
+    title: validated.title,
+    amount: validated.amount,
+    date: validated.date,
+    paidBy: item.paidBy,
+    splitType: item.splitType,
+    category: item.category,
+    notes: validated.notes,
     createdAt: Date.now(),
   });
   return docRef.id;
@@ -119,29 +166,38 @@ export async function createInstallmentTransactions(
     throw new Error('Banco de dados em nuvem não disponível.');
   }
 
-  const installmentAmounts = calculateInstallments(baseItem.amount, installmentsCount);
-  const groupId = 'inst-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+  const safeCount = Math.floor(Number(installmentsCount));
+  if (!Number.isFinite(safeCount) || safeCount < 2 || safeCount > MAX_INSTALLMENTS) {
+    throw new Error(`O número de parcelas deve estar entre 2 e ${MAX_INSTALLMENTS}.`);
+  }
+
+  const validated = validateTransactionInput(baseItem);
+  const installmentAmounts = calculateInstallments(validated.amount, safeCount);
+  const now = Date.now();
+  const groupId = 'inst-' + now + '-' + Math.random().toString(36).substring(2, 6);
   const batch = writeBatch(db);
 
-  for (let i = 0; i < installmentsCount; i++) {
-    const installmentDate = addMonthsToDate(baseItem.date, i);
+  for (let i = 0; i < safeCount; i++) {
+    const installmentDate = addMonthsToDate(validated.date, i);
     const installmentNumber = i + 1;
     const docRef = doc(collection(db, COLLECTION_NAME));
 
     batch.set(docRef, {
-      title: `${baseItem.title} (${installmentNumber}/${installmentsCount})`,
+      title: `${validated.title} (${installmentNumber}/${safeCount})`,
       amount: installmentAmounts[i],
       date: installmentDate,
       paidBy: baseItem.paidBy,
       splitType: baseItem.splitType,
       category: baseItem.category,
-      notes: baseItem.notes ? `${baseItem.notes} - Parcela ${installmentNumber}/${installmentsCount}` : `Parcela ${installmentNumber}/${installmentsCount}`,
+      notes: validated.notes
+        ? `${validated.notes} - Parcela ${installmentNumber}/${safeCount}`
+        : `Parcela ${installmentNumber}/${safeCount}`,
       installment: {
         current: installmentNumber,
-        total: installmentsCount,
+        total: safeCount,
         groupId,
       },
-      createdAt: Date.now() + i, // Incremento sutil para manter ordenação estável
+      createdAt: now + i,
     });
   }
 
@@ -158,15 +214,16 @@ export async function editTransaction(item: Transaction): Promise<void> {
     throw new Error('Banco de dados em nuvem não disponível.');
   }
 
+  const validated = validateTransactionInput(item);
   const docRef = doc(db, COLLECTION_NAME, item.id);
   await updateDoc(docRef, {
-    title: item.title,
-    amount: Number(item.amount),
-    date: item.date,
+    title: validated.title,
+    amount: validated.amount,
+    date: validated.date,
     paidBy: item.paidBy,
     splitType: item.splitType,
     category: item.category,
-    notes: item.notes || '',
+    notes: validated.notes,
   });
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
-import { BalanceSummary, Transaction, Person } from '@/lib/types';
-import { formatCurrency, formatLocalDateForInput } from '@/lib/calculations';
+import type { BalanceSummary, Transaction, Person } from '@/lib/types';
+import { formatCurrency, formatLocalDateForInput, isValidIsoDate } from '@/lib/calculations';
 
 interface SettleModalProps {
   isOpen: boolean;
@@ -39,13 +39,32 @@ export function SettleModal({
     }
   }, [isOpen, summary]);
 
+  // Fechar com tecla Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     const parsedAmount = parseFloat(amount.replace(',', '.'));
-    if (isNaN(parsedAmount) || parsedAmount <= 0) return;
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setErrorMsg('Informe um valor válido maior que zero.');
+      return;
+    }
+    if (!isValidIsoDate(date)) {
+      setErrorMsg('Informe uma data válida.');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -62,9 +81,9 @@ export function SettleModal({
         notes: 'Liquidação de saldo',
       });
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao registrar acerto:', err);
-      setErrorMsg(err.message || 'Falha ao registrar acerto no banco.');
+      setErrorMsg(err instanceof Error ? err.message : 'Falha ao registrar acerto no banco.');
     } finally {
       setIsSubmitting(false);
     }
@@ -74,7 +93,15 @@ export function SettleModal({
   const recipientLabel = payer === 'marii' ? 'Leeo' : 'Marii';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settle-modal-title"
+      onClick={() => {
+        if (!isSubmitting) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm"
+    >
       <div 
         className="w-full max-w-md bg-[#0c0c0e] border border-zinc-800 p-5 sm:p-6 text-zinc-100 rounded-none shadow-2xl font-mono text-xs"
         onClick={(e) => e.stopPropagation()}
@@ -82,13 +109,17 @@ export function SettleModal({
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-emerald-500 rounded-none inline-block" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-200">
+            <h2
+              id="settle-modal-title"
+              className="text-xs font-bold uppercase tracking-wider text-zinc-200"
+            >
               Liquidação / Acerto PIX
             </h2>
           </div>
           <button
             onClick={onClose}
             type="button"
+            aria-label="Fechar modal"
             className="p-1 text-zinc-500 hover:text-zinc-200"
           >
             <X className="w-4 h-4" />
@@ -155,7 +186,7 @@ export function SettleModal({
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-10 pr-3 py-2.5 bg-[#131317] border border-zinc-750 text-base font-bold text-white tabular-nums focus:border-orange-500 focus:outline-none rounded-none"
+                className="w-full pl-10 pr-3 py-2.5 bg-[#131317] border border-zinc-700 text-base font-bold text-white tabular-nums focus:border-orange-500 focus:outline-none rounded-none"
               />
             </div>
           </div>
@@ -169,7 +200,7 @@ export function SettleModal({
               required
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
+              className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-700 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
             />
           </div>
 

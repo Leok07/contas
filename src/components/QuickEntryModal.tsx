@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { Transaction, Person, SplitType, CategoryKey } from '@/lib/types';
-import { CATEGORIES, formatCurrency, formatDateShort, formatLocalDateForInput } from '@/lib/calculations';
+import type { Transaction, Person, SplitType, CategoryKey } from '@/lib/types';
+import {
+  CATEGORIES,
+  calculateInstallments,
+  formatCurrency,
+  formatLocalDateForInput,
+  isValidIsoDate,
+} from '@/lib/calculations';
 
 interface QuickEntryModalProps {
   isOpen: boolean;
@@ -58,13 +64,37 @@ export function QuickEntryModal({
     }
   }, [editingTransaction, isOpen]);
 
+  // Fechar com tecla Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     const parsedAmount = parseFloat(amount.replace(',', '.'));
-    if (!title.trim() || isNaN(parsedAmount) || parsedAmount <= 0 || !date) return;
+
+    if (!title.trim()) {
+      setErrorMsg('Informe uma descrição para o lançamento.');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setErrorMsg('Informe um valor válido maior que zero.');
+      return;
+    }
+    if (!isValidIsoDate(date)) {
+      setErrorMsg('Informe uma data válida.');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -86,9 +116,9 @@ export function QuickEntryModal({
         count
       );
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao salvar lançamento:', err);
-      setErrorMsg(err.message || 'Falha ao salvar no banco de dados.');
+      setErrorMsg(err instanceof Error ? err.message : 'Falha ao salvar no banco de dados.');
     } finally {
       setIsSubmitting(false);
     }
@@ -119,12 +149,31 @@ export function QuickEntryModal({
     return `Dividido 50/50: Leeo deve ${formatCurrency(halfAmount)} para Marii (Abate do saldo).`;
   };
 
-  const installmentPerMonth = numAmount > 0 && installmentsCount > 0 
-    ? numAmount / installmentsCount 
-    : 0;
+  const getInstallmentPreviewText = () => {
+    if (numAmount <= 0 || installmentsCount <= 1) {
+      return `${installmentsCount}x de ${formatCurrency(0)}`;
+    }
+    const values = calculateInstallments(numAmount, installmentsCount);
+    const first = values[0];
+    const last = values[values.length - 1];
+    if (first === last) {
+      return `${installmentsCount}x de ${formatCurrency(first)}`;
+    }
+    const higherCount = values.filter((v) => v === first).length;
+    const lowerCount = installmentsCount - higherCount;
+    return `${higherCount}x de ${formatCurrency(first)} + ${lowerCount}x de ${formatCurrency(last)}`;
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quick-entry-modal-title"
+      onClick={() => {
+        if (!isSubmitting) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm overflow-y-auto"
+    >
       <div 
         className="w-full max-w-md bg-[#0c0c0e] border border-zinc-800 p-5 sm:p-6 text-zinc-100 my-6 rounded-none shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -133,13 +182,17 @@ export function QuickEntryModal({
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 bg-orange-500 rounded-none inline-block" />
-            <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200">
+            <h2
+              id="quick-entry-modal-title"
+              className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200"
+            >
               {editingTransaction ? 'Editar Lançamento' : 'Novo Lançamento'}
             </h2>
           </div>
           <button
             onClick={onClose}
             type="button"
+            aria-label="Fechar modal"
             className="p-1 text-zinc-500 hover:text-zinc-200 transition"
           >
             <X className="w-4 h-4" />
@@ -165,7 +218,7 @@ export function QuickEntryModal({
                 placeholder="0,00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-10 pr-3 py-3 bg-[#131317] border border-zinc-750 text-xl font-bold text-white tabular-nums focus:border-orange-500 focus:outline-none rounded-none"
+                className="w-full pl-10 pr-3 py-3 bg-[#131317] border border-zinc-700 text-xl font-bold text-white tabular-nums focus:border-orange-500 focus:outline-none rounded-none"
               />
             </div>
           </div>
@@ -181,7 +234,7 @@ export function QuickEntryModal({
               placeholder="Ex: Aluguel, Supermercado, Compra no cartão..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2.5 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
+              className="w-full px-3 py-2.5 bg-[#131317] border border-zinc-700 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
             />
           </div>
 
@@ -319,10 +372,10 @@ export function QuickEntryModal({
                     </div>
                   </div>
 
-                  <div className="text-[11px] text-zinc-300 flex items-center justify-between pt-1 border-t border-zinc-850">
+                  <div className="text-[11px] text-zinc-300 flex items-center justify-between gap-2 pt-1 border-t border-zinc-800">
                     <span>Plano:</span>
-                    <strong className="text-white font-mono">
-                      {installmentsCount}x de {formatCurrency(installmentPerMonth)}
+                    <strong className="text-white font-mono text-right">
+                      {getInstallmentPreviewText()}
                     </strong>
                   </div>
 
@@ -345,7 +398,7 @@ export function QuickEntryModal({
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
+                className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-700 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
               />
             </div>
 
@@ -356,7 +409,7 @@ export function QuickEntryModal({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as CategoryKey)}
-                className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-750 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
+                className="w-full px-2.5 py-2 bg-[#131317] border border-zinc-700 text-zinc-200 focus:border-orange-500 focus:outline-none rounded-none"
               >
                 {(Object.keys(CATEGORIES) as CategoryKey[]).map((k) => (
                   <option key={k} value={k}>
@@ -377,7 +430,7 @@ export function QuickEntryModal({
               placeholder="Detalhes adicionais..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-[#131317] border border-zinc-750 text-zinc-300 text-xs focus:border-orange-500 focus:outline-none rounded-none"
+              className="w-full px-2.5 py-1.5 bg-[#131317] border border-zinc-700 text-zinc-300 text-xs focus:border-orange-500 focus:outline-none rounded-none"
             />
           </div>
 

@@ -38,6 +38,30 @@ export const CATEGORIES: Record<CategoryKey, CategoryInfo> = {
   },
 };
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Valida se uma string está no formato ISO YYYY-MM-DD e representa uma data real.
+ */
+export function isValidIsoDate(dateStr: string): boolean {
+  if (!dateStr || !ISO_DATE_RE.test(dateStr)) return false;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return (
+    !Number.isNaN(dt.getTime()) &&
+    dt.getFullYear() === y &&
+    dt.getMonth() === m - 1 &&
+    dt.getDate() === d
+  );
+}
+
+/**
+ * Arredonda um valor monetário para exatamente 2 casas decimais.
+ */
+export function roundCurrency(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
 /**
  * Calcula o resumo consolidado do balanço financeiro entre Leeo e Marii
  */
@@ -50,7 +74,8 @@ export function calculateBalance(transactions: Transaction[]): BalanceSummary {
   let paymentsLeeoToMarii = 0;
 
   for (const t of transactions) {
-    const amount = Number(t.amount) || 0;
+    const amount = Number(t.amount);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
 
     if (t.splitType === 'payment_pix') {
       if (t.paidBy === 'marii') {
@@ -84,7 +109,7 @@ export function calculateBalance(transactions: Transaction[]): BalanceSummary {
   const totalDueFromLeeo = leeoOwesMarii - paymentsLeeoToMarii;
   const netBalance = totalDueFromMarii - totalDueFromLeeo;
 
-  const roundedNet = Math.round(netBalance * 100) / 100;
+  const roundedNet = roundCurrency(netBalance);
   let debtor: 'leeo' | 'marii' | 'none' = 'none';
   let debtAmount = 0;
 
@@ -97,13 +122,13 @@ export function calculateBalance(transactions: Transaction[]): BalanceSummary {
   }
 
   return {
-    spentLeeo: Math.round(spentLeeo * 100) / 100,
-    spentMarii: Math.round(spentMarii * 100) / 100,
-    mariiOwesLeeo: Math.round(totalDueFromMarii * 100) / 100,
-    leeoOwesMarii: Math.round(totalDueFromLeeo * 100) / 100,
+    spentLeeo: roundCurrency(spentLeeo),
+    spentMarii: roundCurrency(spentMarii),
+    mariiOwesLeeo: roundCurrency(totalDueFromMarii),
+    leeoOwesMarii: roundCurrency(totalDueFromLeeo),
     netBalance: roundedNet,
     debtor,
-    debtAmount: Math.round(debtAmount * 100) / 100,
+    debtAmount: roundCurrency(debtAmount),
   };
 }
 
@@ -112,14 +137,16 @@ export function calculateBalance(transactions: Transaction[]): BalanceSummary {
  * Ex: R$ 100 em 3x -> [33.34, 33.33, 33.33] (soma = 100.00)
  */
 export function calculateInstallments(totalAmount: number, count: number): number[] {
-  if (count <= 1) return [Math.round(totalAmount * 100) / 100];
-  
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) return [];
+  const safeCount = Math.floor(count);
+  if (safeCount <= 1) return [roundCurrency(totalAmount)];
+
   const totalCents = Math.round(totalAmount * 100);
-  const baseCents = Math.floor(totalCents / count);
-  const remainder = totalCents % count;
+  const baseCents = Math.floor(totalCents / safeCount);
+  const remainder = totalCents % safeCount;
 
   const installments: number[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < safeCount; i++) {
     // Adiciona 1 centavo nas primeiras parcelas para cobrir o resto da divisão
     const currentCents = i < remainder ? baseCents + 1 : baseCents;
     installments.push(currentCents / 100);
@@ -131,11 +158,11 @@ export function calculateInstallments(totalAmount: number, count: number): numbe
  * Adiciona N meses a uma data YYYY-MM-DD mantendo o dia correspondente
  */
 export function addMonthsToDate(dateStr: string, monthsToAdd: number): string {
-  if (!dateStr || !dateStr.includes('-')) return dateStr;
+  if (!isValidIsoDate(dateStr)) return dateStr;
   const [year, month, day] = dateStr.split('-').map(Number);
-  
+
   const targetDate = new Date(year, (month - 1) + monthsToAdd, day);
-  
+
   // Trata overflow de fim de mês (ex: 31 de janeiro + 1 mês -> 28 de fevereiro)
   const targetMonth = ((month - 1) + monthsToAdd) % 12;
   const normalizedTargetMonth = targetMonth < 0 ? targetMonth + 12 : targetMonth;
@@ -163,18 +190,9 @@ export function formatCurrency(amount: number): string {
  * Formata data curta YYYY-MM-DD para DD/MM
  */
 export function formatDateShort(dateStr: string): string {
-  if (!dateStr || !dateStr.includes('-')) return '';
+  if (!isValidIsoDate(dateStr)) return '';
   const parts = dateStr.split('-');
   return `${parts[2]}/${parts[1]}`;
-}
-
-/**
- * Formata data completa DD/MM/YYYY
- */
-export function formatDateFull(dateStr: string): string {
-  if (!dateStr || !dateStr.includes('-')) return '';
-  const parts = dateStr.split('-');
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 /** Formata uma data para input[type=date] no fuso local, sem conversão UTC. */

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Trash2, Edit3, X } from 'lucide-react';
-import { Transaction } from '@/lib/types';
+import type { Transaction } from '@/lib/types';
 import { formatCurrency, formatDateShort, CATEGORIES } from '@/lib/calculations';
 
 interface IndustrialListProps {
@@ -17,25 +17,35 @@ export function IndustrialList({
   const [search, setSearch] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
-  const filtered = transactions.filter((t) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      t.title.toLowerCase().includes(q) ||
-      (t.notes && t.notes.toLowerCase().includes(q)) ||
-      t.paidBy.toLowerCase().includes(q) ||
-      t.amount.toString().includes(q)
-    );
-  });
+  const filtered = useMemo(() => {
+    const trimmed = search.trim();
+    if (!trimmed) return transactions;
+    const q = trimmed.toLowerCase();
+    const normalizedNumeric = q.replace(',', '.');
+    return transactions.filter((t) => {
+      const formattedAmount = formatCurrency(t.amount).toLowerCase();
+      return (
+        t.title.toLowerCase().includes(q) ||
+        (t.notes && t.notes.toLowerCase().includes(q)) ||
+        t.paidBy.toLowerCase().includes(q) ||
+        t.amount.toString().includes(normalizedNumeric) ||
+        formattedAmount.includes(q)
+      );
+    });
+  }, [transactions, search]);
 
   const handleDelete = async (id: string) => {
+    setDeleteError('');
     try {
       setIsDeleting(true);
       await onDelete(id);
       setConfirmId(null);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Erro ao deletar:', err);
+      const message = err instanceof Error ? err.message : 'Não foi possível excluir o lançamento.';
+      setDeleteError(message);
     } finally {
       setIsDeleting(false);
     }
@@ -71,6 +81,7 @@ export function IndustrialList({
           <Search className="w-3.5 h-3.5 text-zinc-500" />
           <input
             type="text"
+            aria-label="Filtrar lançamentos"
             placeholder="FILTRAR LANÇAMENTOS..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -79,6 +90,8 @@ export function IndustrialList({
         </div>
         {search && (
           <button
+            type="button"
+            aria-label="Limpar busca"
             onClick={() => setSearch('')}
             className="text-zinc-500 hover:text-zinc-300 p-0.5"
           >
@@ -90,18 +103,33 @@ export function IndustrialList({
         </span>
       </div>
 
+      {/* Erro ao excluir */}
+      {deleteError && (
+        <div className="flex items-center justify-between gap-2 p-2.5 border border-red-900 bg-red-950/50 text-red-400 text-[11px] font-mono">
+          <span>{deleteError}</span>
+          <button
+            type="button"
+            aria-label="Dispensar erro"
+            onClick={() => setDeleteError('')}
+            className="text-red-400 hover:text-red-200 p-0.5"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Lista / Tabela */}
       {filtered.length === 0 ? (
-        <div className="border border-zinc-850 bg-[#0c0c0e] p-8 text-center font-mono">
+        <div className="border border-zinc-800 bg-[#0c0c0e] p-8 text-center font-mono">
           <p className="text-xs uppercase tracking-widest text-zinc-500">
             Nenhum lançamento registrado neste período
           </p>
           <p className="text-[11px] text-zinc-600 mt-1">
-            Utilize o botão "Lançar Conta" para adicionar uma conta real.
+            Utilize o botão &quot;Lançar Conta&quot; para adicionar uma conta real.
           </p>
         </div>
       ) : (
-        <div className="border border-zinc-800 bg-[#0c0c0e] divide-y divide-zinc-850">
+        <div className="border border-zinc-800 bg-[#0c0c0e] divide-y divide-zinc-800">
           {filtered.map((t) => {
             const isConfirming = confirmId === t.id;
             const cat = CATEGORIES[t.category] || CATEGORIES.general;
@@ -127,7 +155,7 @@ export function IndustrialList({
                         {t.title}
                       </span>
                       {t.installment && (
-                        <span className="text-[9px] px-1 py-0.2 border border-zinc-700 bg-zinc-850 text-orange-400 font-bold tracking-wider">
+                        <span className="text-[9px] px-1 py-0.5 border border-zinc-700 bg-zinc-800 text-orange-400 font-bold tracking-wider">
                           PARCELA {t.installment.current}/{t.installment.total}
                         </span>
                       )}
@@ -142,7 +170,7 @@ export function IndustrialList({
                 </div>
 
                 {/* Centro/Direita: Quem Pagou, Regra e Valor */}
-                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-zinc-850">
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-zinc-800">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-zinc-400 uppercase">
                       Por: <strong className="text-zinc-200 font-bold">{t.paidBy.toUpperCase()}</strong>
@@ -165,13 +193,16 @@ export function IndustrialList({
                           type="button"
                           onClick={() => handleDelete(t.id)}
                           disabled={isDeleting}
-                          className="px-1 text-[9px] bg-red-600 text-white font-bold uppercase"
+                          className="px-1 text-[9px] bg-red-600 text-white font-bold uppercase disabled:opacity-50"
                         >
                           Sim
                         </button>
                         <button
                           type="button"
-                          onClick={() => setConfirmId(null)}
+                          onClick={() => {
+                            setConfirmId(null);
+                            setDeleteError('');
+                          }}
                           className="px-1 text-[9px] bg-zinc-700 text-zinc-200 uppercase"
                         >
                           Não
@@ -181,6 +212,7 @@ export function IndustrialList({
                       <>
                         <button
                           type="button"
+                          aria-label={`Editar ${t.title}`}
                           onClick={() => onEdit(t)}
                           className="p-1 text-zinc-500 hover:text-zinc-200 transition"
                           title="Editar"
@@ -189,7 +221,11 @@ export function IndustrialList({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setConfirmId(t.id)}
+                          aria-label={`Excluir ${t.title}`}
+                          onClick={() => {
+                            setDeleteError('');
+                            setConfirmId(t.id);
+                          }}
                           className="p-1 text-zinc-500 hover:text-red-400 transition"
                           title="Excluir"
                         >

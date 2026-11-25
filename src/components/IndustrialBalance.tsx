@@ -1,5 +1,5 @@
 import React from 'react';
-import { BalanceSummary, BillingCycle } from '@/lib/types';
+import type { BalanceSummary, BillingCycle } from '@/lib/types';
 import { formatCurrency } from '@/lib/calculations';
 import { Plus, ArrowRight, CornerDownRight } from 'lucide-react';
 
@@ -20,7 +20,6 @@ export function IndustrialBalance({
 }: IndustrialBalanceProps) {
   const isSettled = summary.debtor === 'none';
   const mariiOwes = summary.debtor === 'marii';
-  const leeoOwes = summary.debtor === 'leeo';
 
   return (
     <div className="border border-zinc-800 bg-[#0c0c0e] p-5 sm:p-6 rounded-none relative">
@@ -37,7 +36,7 @@ export function IndustrialBalance({
               Histórico Geral Acumulado
             </span>
           ) : cycle ? (
-            <span className="flex items-center gap-1.5 px-2 py-0.5 border border-zinc-750 bg-zinc-900 text-zinc-300">
+            <span className="flex items-center gap-1.5 px-2 py-0.5 border border-zinc-700 bg-zinc-900 text-zinc-300">
               <span className={`w-1.5 h-1.5 rounded-full ${cycle.isCurrent ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
               Ciclo {cycle.label}
             </span>
@@ -127,7 +126,7 @@ export function IndustrialBalance({
           className={`flex items-center justify-center gap-2 py-3 px-4 border text-xs font-mono uppercase tracking-wider transition rounded-sm ${
             isSettled
               ? 'border-zinc-800 text-zinc-600 cursor-not-allowed bg-zinc-950'
-              : 'border-zinc-700 bg-zinc-900 hover:bg-zinc-850 hover:border-zinc-500 text-zinc-200'
+              : 'border-zinc-700 bg-zinc-900 hover:bg-zinc-800 hover:border-zinc-500 text-zinc-200'
           }`}
         >
           <ArrowRight className="w-3.5 h-3.5" />
